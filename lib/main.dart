@@ -1,125 +1,334 @@
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+import 'package:intl/intl.dart';
 
 void main() {
-  runApp(const MyApp());
+  runApp(const GitHubIssuesApp());
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
-
-  // This widget is the root of your application.
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Flutter Demo',
-      theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
-        useMaterial3: true,
-      ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
-    );
-  }
-}
-
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
-
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
+class GitHubIssuesApp extends StatefulWidget {
+  const GitHubIssuesApp({super.key});
 
   @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  _GitHubIssuesAppState createState() => _GitHubIssuesAppState();
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class _GitHubIssuesAppState extends State<GitHubIssuesApp> {
+  bool isDarkMode = false;
 
-  void _incrementCounter() {
+  void toggleTheme() {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      isDarkMode = !isDarkMode;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'GitHub Issues Viewer',
+      theme: isDarkMode ? ThemeData.dark() : ThemeData.light(),
+      home: IssuesScreen(toggleTheme: toggleTheme, isDarkMode: isDarkMode),
+    );
+  }
+}
+
+class IssuesScreen extends StatefulWidget {
+  final VoidCallback toggleTheme;
+  final bool isDarkMode;
+
+  const IssuesScreen(
+      {super.key, required this.toggleTheme, required this.isDarkMode});
+
+  @override
+  _IssuesScreenState createState() => _IssuesScreenState();
+}
+
+class _IssuesScreenState extends State<IssuesScreen> {
+  final TextEditingController _controller = TextEditingController();
+  List issues = [];
+  bool isLoading = false;
+  bool hasMore = false;
+  String? errorMessage;
+  int page = 1;
+  final int perPage = 10;
+  String filterState = 'all';
+
+  Future<void> fetchIssues(String repoUrl) async {
+    setState(() {
+      isLoading = true;
+      errorMessage = null;
+    });
+
+    try {
+      Uri? uri = Uri.tryParse(repoUrl);
+      if (uri == null || !uri.host.contains('github.com')) {
+        throw 'Invalid GitHub repository URL';
+      }
+
+      List<String> pathSegments = uri.pathSegments;
+      if (pathSegments.length < 2) {
+        throw 'Invalid repository format';
+      }
+      String owner = pathSegments[0];
+      String repo = pathSegments[1];
+
+      final response = await http.get(
+        Uri.parse(
+            'https://api.github.com/repos/$owner/$repo/issues?state=$filterState&page=$page&per_page=$perPage'),
+        headers: {'Accept': 'application/vnd.github.v3+json'},
+      );
+
+      if (response.statusCode == 200) {
+        List newIssues = json.decode(response.body);
+        setState(() {
+          issues.addAll(newIssues);
+          hasMore = newIssues.length == perPage;
+        });
+      } else {
+        throw 'Failed to fetch issues: ${response.statusCode}';
+      }
+    } catch (e) {
+      setState(() {
+        errorMessage = e.toString();
+      });
+    } finally {
+      setState(() {
+        isLoading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return Scaffold(
+      extendBodyBehindAppBar: false,
+      extendBody: true,
       appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
+        forceMaterialTransparency: true,
+        title: const Text(
+          'GitHub Issues Viewer',
+          style: TextStyle(
+            fontFamily: "cmn",
+          ),
+        ),
+        actions: [
+          IconButton(
+            icon: Icon(widget.isDarkMode ? Icons.dark_mode : Icons.light_mode),
+            onPressed: widget.toggleTheme,
+          ),
+        ],
       ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text(
-              'You have pushed the button this many times:',
+          children: [
+            TextField(
+              style: const TextStyle(fontFamily: "cmn"),
+              controller: _controller,
+              decoration: const InputDecoration(
+                labelText: 'GitHub Repository URL',
+                labelStyle: TextStyle(fontFamily: "cmn"),
+                border: OutlineInputBorder(),
+              ),
             ),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+            const SizedBox(height: 10),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      issues.clear();
+                      page = 1;
+                      hasMore = true;
+                    });
+                    fetchIssues(_controller.text);
+                  },
+                  child: const Text(
+                    'Fetch Issues',
+                    style: TextStyle(fontFamily: "cmn"),
+                  ),
+                ),
+                DropdownButton<String>(
+                  value: filterState,
+                  items: const [
+                    DropdownMenuItem(
+                        value: 'all',
+                        child: Text(
+                          'All',
+                          style: TextStyle(fontFamily: "cmn"),
+                        )),
+                    DropdownMenuItem(
+                        value: 'open',
+                        child: Text(
+                          'Open',
+                          style: TextStyle(fontFamily: "cmn"),
+                        )),
+                    DropdownMenuItem(
+                        value: 'closed',
+                        child: Text(
+                          'Closed',
+                          style: TextStyle(
+                            fontFamily: "cmn",
+                          ),
+                        )),
+                  ],
+                  onChanged: (value) {
+                    if (value != null) {
+                      setState(() {
+                        filterState = value;
+                        issues.clear();
+                        page = 1;
+                      });
+                      fetchIssues(_controller.text);
+                    }
+                  },
+                ),
+              ],
+            ),
+            if (isLoading) const CircularProgressIndicator(),
+            if (errorMessage != null)
+              Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: Text(
+                  errorMessage!,
+                  style: const TextStyle(color: Colors.red, fontFamily: "cmn"),
+                ),
+              ),
+            Expanded(
+              child: ListView.builder(
+                itemCount: issues.length + 1,
+                itemBuilder: (context, index) {
+                  if (index == issues.length) {
+                    return hasMore
+                        ? ElevatedButton(
+                            onPressed: () {
+                              setState(() {
+                                page++;
+                              });
+                              fetchIssues(_controller.text);
+                            },
+                            child: const Text(
+                              'Load More',
+                              style: TextStyle(
+                                fontFamily: "cmn",
+                              ),
+                            ),
+                          )
+                        : const SizedBox.shrink();
+                  }
+                  final issue = issues[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(
+                        vertical: 8.0, horizontal: 4.0),
+                    child: ListTile(
+                      title: Text(issue['title'],
+                          style: const TextStyle(
+                              fontFamily: "cmn", fontWeight: FontWeight.bold)),
+                      subtitle: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text("Issue Number: #${issue['number']}",
+                              style: const TextStyle(
+                                  fontFamily: "cmn",
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.bold)),
+                          Text("Issue State: ${issue['state'].toUpperCase()}",
+                              style: const TextStyle(
+                                  fontFamily: "cmn", color: Colors.grey)),
+                          Text(
+                              "Created At: ${formatDateTime(issue['created_at'])}",
+                              style: const TextStyle(color: Colors.blueGrey)),
+                          Text("Created By: ${issue['user']['login']}",
+                              style: const TextStyle(
+                                  fontFamily: "cmn", color: Colors.blueGrey)),
+                          const SizedBox(height: 10),
+                          Text(
+                            issue['body'] ?? 'No description',
+                            style: const TextStyle(fontFamily: "cmn"),
+                          ),
+                          Wrap(
+                            children: issue['labels']
+                                .map<Widget>((label) => Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                          horizontal: 4.0),
+                                      child: Chip(
+                                        label: Text(
+                                          label['name'],
+                                          style: TextStyle(
+                                              fontFamily: "cmn",
+                                              color: widget.isDarkMode
+                                                  ? Colors.white
+                                                  : Colors.black),
+                                        ),
+                                        backgroundColor: widget.isDarkMode
+                                            ? Colors.grey[700]
+                                            : Colors.grey[200],
+                                      ),
+                                    ))
+                                .toList(),
+                          ),
+                        ],
+                      ),
+                      trailing: const Icon(Icons.open_in_new),
+                      onTap: () {
+                        showDialog(
+                          context: context,
+                          builder: (context) => AlertDialog(
+                            title: Text(issue['title'],style: const TextStyle(fontFamily: "cmn"),),
+                            content: SingleChildScrollView(
+                              child: ListBody(
+                                children: [
+                                  Text("Issue #${issue['number']}",
+                                      style: const TextStyle(
+                                          fontFamily: "cmn",
+                                          fontWeight: FontWeight.bold)),
+                                  const SizedBox(height: 5),
+                                  Text(
+                                      style: const TextStyle(fontFamily: "cmn"),
+                                      "State: ${issue['state'].toUpperCase()}"),
+                                  Text(
+                                      "Created At: ${formatDateTime(issue['created_at'])}",
+                                      style: const TextStyle(
+                                          fontFamily: "cmn",
+                                          color: Colors.blueGrey)),
+                                  Text("Created By: ${issue['user']['login']}",
+                                      style: const TextStyle(
+                                          fontFamily: "cmn",
+                                          color: Colors.blueGrey)),
+                                  const SizedBox(height: 10),
+                                  Text(
+                                    issue['body'] ?? 'No description',
+                                    style: const TextStyle(fontFamily: "cmn"),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () => Navigator.pop(context),
+                                child: const Text('Close',style: TextStyle(fontFamily: "cmn",),),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+              ),
             ),
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
+  }
+
+  String formatDateTime(String dateTime) {
+    DateTime parsedDate = DateTime.parse(dateTime);
+    return DateFormat('d/M/yyyy h:mm a').format(parsedDate);
   }
 }
